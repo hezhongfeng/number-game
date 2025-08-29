@@ -99,7 +99,7 @@ export function useGameState() {
 
   const endGame = () => {
     gameState.isGameActive.value = false
-    
+
     // 保存游戏统计
     if (gameState.questionHistory.value.length > 0) {
       const stats = sessionStats.value

@@ -21,31 +21,31 @@ export function useAudio() {
   // 获取最佳中文语音
   const getBestVoice = () => {
     if (!speechSynth) return null
-    
+
     const voices = speechSynth.getVoices()
-    
+
     // 优先选择中文语音，按质量排序
-    const chineseVoices = voices.filter(voice => 
-      voice.lang.includes('zh') || 
+    const chineseVoices = voices.filter(voice =>
+      voice.lang.includes('zh') ||
       voice.lang.includes('CN') ||
       voice.name.includes('Chinese') ||
       voice.name.includes('中文') ||
       voice.name.includes('Mandarin')
     )
-    
+
     // 按优先级排序：本地语音 > 网络语音，女声 > 男声
     const sortedVoices = chineseVoices.sort((a, b) => {
       // 本地语音优先
       if (a.localService && !b.localService) return -1
       if (!a.localService && b.localService) return 1
-      
+
       // 女声优先（通常更清晰）
       if (a.name.includes('Female') && !b.name.includes('Female')) return -1
       if (!a.name.includes('Female') && b.name.includes('Female')) return 1
-      
+
       return 0
     })
-    
+
     return sortedVoices[0] || voices[0] || null
   }
 
@@ -126,7 +126,7 @@ export function useAudio() {
             setTimeout(initVoices, 100)
             return
           }
-          
+
           // 获取优化的中文数字文本
           const getChineseNumber = (num) => {
             const chineseNumbers = {
@@ -142,7 +142,7 @@ export function useAudio() {
           // 获取针对特定数字的语音参数，专门优化中文发音
           const getVoiceParams = (num) => {
             const numStr = String(num)
-            
+
             switch (numStr) {
               case '3':
                 return {
@@ -457,7 +457,7 @@ export function useAudio() {
               volume: volume
             }
             break
-            
+
           case 'encourage':
           case 'incorrect':
             const encouragePhrases = [
@@ -475,7 +475,7 @@ export function useAudio() {
               volume: volume
             }
             break
-            
+
           case 'start':
             text = '开始答题！'
             voiceParams = {
@@ -484,7 +484,7 @@ export function useAudio() {
               volume: volume
             }
             break
-            
+
           case 'finish':
             text = '游戏结束！'
             voiceParams = {
@@ -493,7 +493,7 @@ export function useAudio() {
               volume: volume
             }
             break
-            
+
           default:
             console.log(`音效类型: ${type}`)
             resolve()
@@ -505,14 +505,14 @@ export function useAudio() {
         // 创建新的语音实例，避免与数字播放冲突
         const utterance = new SpeechSynthesisUtterance(text)
         const bestVoice = getBestVoice()
-        
+
         if (bestVoice) {
           utterance.voice = bestVoice
           utterance.lang = bestVoice.lang
         } else {
           utterance.lang = APP_CONFIG.speech.lang
         }
-        
+
         utterance.rate = Math.max(0.1, Math.min(10, voiceParams.rate))
         utterance.pitch = Math.max(0, Math.min(2, voiceParams.pitch))
         utterance.volume = Math.max(0, Math.min(1, voiceParams.volume))

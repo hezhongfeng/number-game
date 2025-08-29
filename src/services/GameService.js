@@ -1,212 +1,204 @@
-// 游戏服务类
-import { GAME_CONFIG } from '@/config/game.config.js'
-import { StorageUtil } from '@/utils/storage.js'
-import { MathUtil } from '@/utils/math.js'
+/**
+ * 游戏核心逻辑服务
+ */
+import { DIFFICULTY_SETTINGS } from '../config/app.config.js'
 
 export class GameService {
-  constructor() {
-    this.currentGame = null
-    this.score = 0
-    this.lives = GAME_CONFIG.SETTINGS.DEFAULT_LIVES
-    this.timeRemaining = GAME_CONFIG.SETTINGS.DEFAULT_TIME_LIMIT
-    this.isGameActive = false
+  // 获取难度设置
+  getDifficultySettings() {
+    return DIFFICULTY_SETTINGS
   }
 
-  /**
-   * 开始新游戏
-   * @param {string} gameType 游戏类型
-   * @param {string} difficulty 难度等级
-   */
-  startGame(gameType, difficulty = GAME_CONFIG.DIFFICULTY.EASY) {
-    this.currentGame = {
-      type: gameType,
-      difficulty,
-      startTime: Date.now()
-    }
-    this.score = 0
-    this.lives = GAME_CONFIG.SETTINGS.DEFAULT_LIVES
-    this.timeRemaining = GAME_CONFIG.SETTINGS.DEFAULT_TIME_LIMIT
-    this.isGameActive = true
-
-    return this.generateGameData(gameType, difficulty)
+  // 根据ID获取难度设置
+  getDifficultyById(id) {
+    return DIFFICULTY_SETTINGS.find(setting => setting.id === id) || DIFFICULTY_SETTINGS[0]
   }
 
-  /**
-   * 结束游戏
-   */
-  endGame() {
-    if (!this.isGameActive) return
+  // 获取难度名称
+  getDifficultyName(level) {
+    const setting = this.getDifficultyById(level)
+    return setting ? setting.name : '未知难度'
+  }
 
-    this.isGameActive = false
-    const finalScore = this.score
+  // 生成随机数字
+  generateRandomNumber(min, max) {
+    return Math.floor(Math.random() * (max - min + 1)) + min
+  }
 
-    // 保存最高分
-    this.saveHighScore(finalScore)
+  // 生成题目
+  generateQuestion(difficultyId) {
+    const difficulty = this.getDifficultyById(difficultyId)
+    const [min, max] = difficulty.range
+    const optionsCount = difficulty.options
 
-    // 保存游戏进度
-    this.saveGameProgress()
+    // 生成目标数字
+    const targetNumber = this.generateRandomNumber(min, max)
+
+    // 生成选项
+    const options = this.generateOptions(targetNumber, min, max, optionsCount)
 
     return {
-      score: finalScore,
-      isNewRecord: this.isNewHighScore(finalScore)
+      number: targetNumber,
+      options: options,
+      timestamp: Date.now()
     }
   }
 
-  /**
-   * 生成游戏数据
-   * @param {string} gameType 游戏类型
-   * @param {string} difficulty 难度等级
-   */
-  generateGameData(gameType, difficulty) {
-    switch (gameType) {
-      case GAME_CONFIG.GAME_TYPES.MEMORY:
-        return this.generateMemoryGame(difficulty)
-      case GAME_CONFIG.GAME_TYPES.MATH:
-        return this.generateMathGame(difficulty)
-      case GAME_CONFIG.GAME_TYPES.PUZZLE:
-        return this.generatePuzzleGame(difficulty)
-      case GAME_CONFIG.GAME_TYPES.GUESS:
-        return this.generateGuessGame(difficulty)
-      default:
-        throw new Error(`未知的游戏类型: ${gameType}`)
+  // 生成选项
+  generateOptions(correctAnswer, min, max, count) {
+    const options = new Set([correctAnswer])
+
+    while (options.size < count) {
+      const option = this.generateRandomNumber(min, max)
+      options.add(option)
     }
+
+    // 转换为数组并打乱顺序
+    const optionsArray = Array.from(options)
+    return this.shuffleArray(optionsArray)
   }
 
-  /**
-   * 生成记忆游戏数据
-   */
-  generateMemoryGame(difficulty) {
-    const length = difficulty === GAME_CONFIG.DIFFICULTY.EASY ? 4 :
-                  difficulty === GAME_CONFIG.DIFFICULTY.MEDIUM ? 6 : 8
-    const sequence = MathUtil.generateSequence(length, 0, 9)
+  // 打乱数组
+  shuffleArray(array) {
+    const shuffled = [...array]
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
+    }
+    return shuffled
+  }
+
+  // 检查选择答案
+  checkAnswer(question, selectedAnswer, responseTime) {
+    const correct = question.number === selectedAnswer
+    const score = correct ? this.calculateScore(question.difficulty, responseTime) : 0
 
     return {
-      sequence,
-      displayTime: 3000, // 显示时间（毫秒）
-      userInput: []
+      correct,
+      score,
+      responseTime
     }
   }
 
-  /**
-   * 生成数学游戏数据
-   */
-  generateMathGame(difficulty) {
-    const operators = ['+', '-', '*', '/']
-    const operator = operators[MathUtil.randomInt(0, operators.length - 1)]
-    const difficultyLevel = difficulty === GAME_CONFIG.DIFFICULTY.EASY ? 1 :
-                           difficulty === GAME_CONFIG.DIFFICULTY.MEDIUM ? 2 : 3
-
-    return MathUtil.generateMathProblem(operator, difficultyLevel)
-  }
-
-  /**
-   * 生成拼图游戏数据
-   */
-  generatePuzzleGame(difficulty) {
-    const size = difficulty === GAME_CONFIG.DIFFICULTY.EASY ? 3 :
-                difficulty === GAME_CONFIG.DIFFICULTY.MEDIUM ? 4 : 5
-    const numbers = Array.from({ length: size * size - 1 }, (_, i) => i + 1)
-    numbers.push(null) // 空格
+  // 检查语音答案
+  checkSpeechAnswer(question, spokenText, responseTime) {
+    const correct = this.verifyNumberSpeech(question.number, spokenText)
+    const score = correct ? this.calculateScore(question.difficulty, responseTime) : 0
 
     return {
-      size,
-      numbers: MathUtil.shuffle(numbers),
-      solution: [...numbers.slice(0, -1), null]
+      correct,
+      score,
+      responseTime
     }
   }
 
-  /**
-   * 生成猜数字游戏数据
-   */
-  generateGuessGame(difficulty) {
-    const range = difficulty === GAME_CONFIG.DIFFICULTY.EASY ? 100 :
-                 difficulty === GAME_CONFIG.DIFFICULTY.MEDIUM ? 500 : 1000
-    const target = MathUtil.randomInt(1, range)
+  // 验证数字语音
+  verifyNumberSpeech(targetNumber, spokenText) {
+    if (!spokenText) return false
+
+    const cleanText = spokenText.toLowerCase().trim()
+    const targetStr = String(targetNumber)
+
+    // 直接数字匹配
+    if (cleanText === targetStr) return true
+
+    // 中文数字映射
+    const chineseNumbers = {
+      '零': '0', '一': '1', '二': '2', '三': '3', '四': '4',
+      '五': '5', '六': '6', '七': '7', '八': '8', '九': '9',
+      '十': '10', '百': '100', '千': '1000'
+    }
+
+    // 检查中文数字
+    for (const [chinese, digit] of Object.entries(chineseNumbers)) {
+      if (cleanText.includes(chinese) && digit === targetStr) {
+        return true
+      }
+    }
+
+    // 复合数字处理（如"十一"、"二十"等）
+    if (targetNumber >= 10 && targetNumber <= 99) {
+      const tens = Math.floor(targetNumber / 10)
+      const ones = targetNumber % 10
+
+      if (tens === 1) {
+        // 10-19的特殊处理
+        if (ones === 0 && cleanText.includes('十')) return true
+        if (ones > 0) {
+          const expectedText = '十' + Object.keys(chineseNumbers)[ones]
+          if (cleanText.includes(expectedText.replace(/undefined/g, ''))) return true
+        }
+      } else {
+        // 20-99的处理
+        const tensText = Object.keys(chineseNumbers)[tens]
+        const onesText = ones === 0 ? '' : Object.keys(chineseNumbers)[ones]
+        const expectedText = tensText + '十' + onesText
+        if (cleanText.includes(expectedText)) return true
+      }
+    }
+
+    // 模糊匹配
+    return cleanText.includes(targetStr)
+  }
+
+  // 计算分数
+  calculateScore(difficulty, responseTime) {
+    const baseScore = 10
+    const difficultyMultiplier = difficulty * 0.5 + 1
+    const timeBonus = Math.max(0, (5000 - responseTime) / 1000) // 5秒内有时间奖励
+
+    return Math.round(baseScore * difficultyMultiplier + timeBonus)
+  }
+
+  // 生成统计数据
+  generateStats(questionHistory) {
+    if (!questionHistory || questionHistory.length === 0) {
+      return {
+        totalQuestions: 0,
+        correctAnswers: 0,
+        wrongAnswers: 0,
+        accuracy: 0,
+        totalScore: 0,
+        averageResponseTime: 0,
+        bestStreak: 0
+      }
+    }
+
+    const totalQuestions = questionHistory.length
+    const correctAnswers = questionHistory.filter(q => q.correct).length
+    const wrongAnswers = totalQuestions - correctAnswers
+    const accuracy = totalQuestions > 0 ? (correctAnswers / totalQuestions) * 100 : 0
+
+    const totalScore = questionHistory.reduce((sum, q) => {
+      return sum + (q.score || 0)
+    }, 0)
+
+    const totalResponseTime = questionHistory.reduce((sum, q) => sum + q.responseTime, 0)
+    const averageResponseTime = totalQuestions > 0 ? totalResponseTime / totalQuestions : 0
+
+    // 计算最佳连击
+    let currentStreak = 0
+    let bestStreak = 0
+
+    for (const question of questionHistory) {
+      if (question.correct) {
+        currentStreak++
+        bestStreak = Math.max(bestStreak, currentStreak)
+      } else {
+        currentStreak = 0
+      }
+    }
 
     return {
-      target,
-      range,
-      attempts: [],
-      maxAttempts: 10
+      totalQuestions,
+      correctAnswers,
+      wrongAnswers,
+      accuracy: Math.round(accuracy * 100) / 100,
+      totalScore,
+      averageResponseTime: Math.round(averageResponseTime),
+      bestStreak
     }
-  }
-
-  /**
-   * 检查答案
-   * @param {any} userAnswer 用户答案
-   * @param {any} correctAnswer 正确答案
-   */
-  checkAnswer(userAnswer, correctAnswer) {
-    const isCorrect = JSON.stringify(userAnswer) === JSON.stringify(correctAnswer)
-
-    if (isCorrect) {
-      this.addScore()
-    } else {
-      this.loseLife()
-    }
-
-    return isCorrect
-  }
-
-  /**
-   * 增加分数
-   */
-  addScore() {
-    const multiplier = GAME_CONFIG.SETTINGS.SCORE_MULTIPLIER[this.currentGame.difficulty]
-    this.score += 10 * multiplier
-  }
-
-  /**
-   * 失去生命
-   */
-  loseLife() {
-    this.lives = Math.max(0, this.lives - 1)
-    if (this.lives === 0) {
-      this.endGame()
-    }
-  }
-
-  /**
-   * 保存最高分
-   */
-  saveHighScore(score) {
-    const currentHighScore = this.getHighScore()
-    if (score > currentHighScore) {
-      StorageUtil.setItem(GAME_CONFIG.STORAGE_KEYS.HIGH_SCORE, score)
-    }
-  }
-
-  /**
-   * 获取最高分
-   */
-  getHighScore() {
-    return StorageUtil.getItem(GAME_CONFIG.STORAGE_KEYS.HIGH_SCORE, 0)
-  }
-
-  /**
-   * 检查是否为新纪录
-   */
-  isNewHighScore(score) {
-    return score > this.getHighScore()
-  }
-
-  /**
-   * 保存游戏进度
-   */
-  saveGameProgress() {
-    const progress = {
-      lastPlayed: Date.now(),
-      totalGames: this.getTotalGames() + 1,
-      bestScore: Math.max(this.score, this.getHighScore())
-    }
-    StorageUtil.setItem(GAME_CONFIG.STORAGE_KEYS.GAME_PROGRESS, progress)
-  }
-
-  /**
-   * 获取总游戏次数
-   */
-  getTotalGames() {
-    const progress = StorageUtil.getItem(GAME_CONFIG.STORAGE_KEYS.GAME_PROGRESS, {})
-    return progress.totalGames || 0
   }
 }
+
+export default new GameService()
